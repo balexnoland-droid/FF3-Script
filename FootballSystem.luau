@@ -1,535 +1,167 @@
+--//==================================================
+--// THUNDER HUB - FF3 EXECUTOR EDITION
+--//==================================================
+
 local Players = game:GetService("Players")
-local UIS = game:GetService("UserInputService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 
-local LP = Players.LocalPlayer
-local PG = LP:WaitForChild("PlayerGui")
+local LocalPlayer = Players.LocalPlayer
 
---==================================================
--- CONFIG
---==================================================
+--//==================================================
+--// UI PARENT
+--//==================================================
 
-local C = {
-	Enabled = true,
+local function GetUIParent()
+	if typeof(gethui) == "function" then
+		local success, result = pcall(gethui)
 
-	AimAssist = true,
-	AimStrength = .35,
-	Accuracy = 85,
-	ThrowPower = 85,
-	AutoTarget = true,
+		if success and result then
+			return result
+		end
+	end
 
-	AutoCatch = true,
-	CatchRadius = 35,
-	CatchDelay = .15,
-	HighPriority = true,
+	local CoreGui = game:GetService("CoreGui")
 
+	if CoreGui then
+		return CoreGui
+	end
+
+	return LocalPlayer:WaitForChild("PlayerGui")
+end
+
+local UIParent = GetUIParent()
+
+--//==================================================
+--// REMOVE OLD VERSION
+--//==================================================
+
+pcall(function()
+	local old = UIParent:FindFirstChild("ThunderHub")
+
+	if old then
+		old:Destroy()
+	end
+end)
+
+pcall(function()
+	local old = game:GetService("CoreGui"):FindFirstChild("ThunderHub")
+
+	if old then
+		old:Destroy()
+	end
+end)
+
+--//==================================================
+--// STATE
+--//==================================================
+
+local State = {
+	-- QB
+	AimAssist = false,
+	AimStrength = 75,
+	Accuracy = 90,
+	ThrowPower = 100,
+	AutoTarget = false,
+	TargetDistance = 100,
+
+	-- Catching
+	AutoCatch = false,
+	CatchRadius = 10,
+	CatchDelay = 0,
+	CatchWindow = 100,
+	HighPriority = false,
+	VisualCatch = true,
+
+	-- Physics
 	Speed = 16,
 	JumpBoost = false,
 	JumpPower = 50,
 	Gravity = 196.2,
 	FOV = 70,
+	AirResistance = 0,
+	BallVelocity = 100,
 
-	FPS = true,
+	-- Settings
+	SystemEnabled = true,
+	FPSBoost = false,
 	Visuals = true,
+	UIScale = 100,
 
-	Preset = "Legit",
+	-- Customs
 	CustomQB = false,
 	CustomBall = false,
-	CustomAnimations = false
+	CustomAnimations = false,
+
+	Preset = "Legit"
 }
 
---==================================================
--- COLORS
---==================================================
+local Connections = {}
 
-local PURPLE = Color3.fromRGB(135, 40, 255)
-local PURPLE2 = Color3.fromRGB(75, 20, 145)
-local BG = Color3.fromRGB(6, 5, 13)
-local CARD = Color3.fromRGB(13, 10, 26)
-local DARK = Color3.fromRGB(22, 16, 40)
-local TEXT = Color3.fromRGB(240, 235, 255)
-local MUTED = Color3.fromRGB(145, 135, 170)
+--//==================================================
+--// COLORS
+--//==================================================
 
---==================================================
--- HELPERS
---==================================================
+local Purple = Color3.fromRGB(145, 70, 255)
+local PurpleLight = Color3.fromRGB(181, 119, 255)
 
-local function New(class, props)
-	local obj = Instance.new(class)
+local Background = Color3.fromRGB(9, 7, 14)
+local Panel = Color3.fromRGB(16, 13, 23)
+local Card = Color3.fromRGB(23, 19, 32)
+local CardHover = Color3.fromRGB(32, 26, 44)
 
-	for k, v in pairs(props or {}) do
-		obj[k] = v
+local White = Color3.fromRGB(245, 243, 250)
+local Gray = Color3.fromRGB(153, 148, 165)
+
+--//==================================================
+--// HELPERS
+--//==================================================
+
+local function Create(class, properties)
+	local object = Instance.new(class)
+
+	for property, value in pairs(properties or {}) do
+		object[property] = value
 	end
 
-	return obj
+	return object
 end
 
-local function Corner(obj, radius)
-	New("UICorner", {
-		Parent = obj,
-		CornerRadius = UDim.new(0, radius)
-	})
+local function Corner(parent, radius)
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, radius or 8)
+	corner.Parent = parent
+	return corner
 end
 
---==================================================
--- GUI
---==================================================
-
-local GUI = New("ScreenGui", {
-	Name = "ThunderHubFF3",
-	ResetOnSpawn = false,
-	IgnoreGuiInset = true,
-	Parent = PG
-})
-
-local Main = New("Frame", {
-	Parent = GUI,
-	Size = UDim2.fromOffset(900, 520),
-	Position = UDim2.new(.5, -450, .5, -260),
-	BackgroundColor3 = BG,
-	BorderSizePixel = 0,
-	ClipsDescendants = true
-})
-
-Corner(Main, 18)
-
-New("UIStroke", {
-	Parent = Main,
-	Color = PURPLE,
-	Transparency = .25,
-	Thickness = 1
-})
-
---==================================================
--- LIGHTNING BACKGROUND
---==================================================
-
-local LightningLayer = New("Frame", {
-	Parent = Main,
-	Size = UDim2.fromScale(1, 1),
-	BackgroundTransparency = 1,
-	ClipsDescendants = true,
-	ZIndex = 0
-})
-
-local function Lightning(x, y, length, angle)
-	local bolt = New("Frame", {
-		Parent = LightningLayer,
-		AnchorPoint = Vector2.new(.5, 0),
-		Position = UDim2.new(x, 0, y, 0),
-		Size = UDim2.fromOffset(2, length),
-		BackgroundColor3 = PURPLE,
-		BackgroundTransparency = 1,
-		BorderSizePixel = 0,
-		Rotation = angle,
-		ZIndex = 0
-	})
-
-	return bolt
+local function Stroke(parent, color, transparency, thickness)
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = color or Purple
+	stroke.Transparency = transparency or 0
+	stroke.Thickness = thickness or 1
+	stroke.Parent = parent
+	return stroke
 end
 
-local Bolts = {
-	Lightning(.15, -.1, 210, 24),
-	Lightning(.30, .0, 170, -18),
-	Lightning(.55, -.1, 250, 16),
-	Lightning(.76, -.05, 220, -25),
-	Lightning(.92, .1, 190, 20)
-}
-
-task.spawn(function()
-	while GUI.Parent do
-		task.wait(math.random(25, 55) / 10)
-
-		for _, bolt in ipairs(Bolts) do
-			bolt.BackgroundTransparency = 0.55
-		end
-
-		task.wait(.05)
-
-		for _, bolt in ipairs(Bolts) do
-			bolt.BackgroundTransparency = 0.05
-		end
-
-		task.wait(.07)
-
-		for _, bolt in ipairs(Bolts) do
-			bolt.BackgroundTransparency = .75
-		end
-
-		task.wait(.08)
-
-		for _, bolt in ipairs(Bolts) do
-			bolt.BackgroundTransparency = 1
-		end
-	end
-end)
-
---==================================================
--- TOP BAR
---==================================================
-
-local Top = New("Frame", {
-	Parent = Main,
-	Size = UDim2.new(1, 0, 0, 72),
-	BackgroundColor3 = Color3.fromRGB(10, 8, 20),
-	BorderSizePixel = 0,
-	ZIndex = 5
-})
-
-Corner(Top, 18)
-
-New("TextLabel", {
-	Parent = Top,
-	Position = UDim2.fromOffset(25, 13),
-	Size = UDim2.fromOffset(190, 24),
-	BackgroundTransparency = 1,
-	Text = "⚡ THUNDER HUB",
-	TextColor3 = TEXT,
-	Font = Enum.Font.GothamBold,
-	TextSize = 17,
-	TextXAlignment = Enum.TextXAlignment.Left,
-	ZIndex = 6
-})
-
-New("TextLabel", {
-	Parent = Top,
-	Position = UDim2.fromOffset(27, 39),
-	Size = UDim2.fromOffset(80, 18),
-	BackgroundTransparency = 1,
-	Text = "FF3",
-	TextColor3 = PURPLE,
-	Font = Enum.Font.GothamBold,
-	TextSize = 11,
-	TextXAlignment = Enum.TextXAlignment.Left,
-	ZIndex = 6
-})
-
---==================================================
--- CONTENT
---==================================================
-
-local Content = New("Frame", {
-	Parent = Main,
-	Position = UDim2.fromOffset(235, 90),
-	Size = UDim2.new(1, -260, 1, -105),
-	BackgroundTransparency = 1,
-	ZIndex = 2
-})
-
-local Pages = {}
-
-local function MakePage(name)
-	local page = New("Frame", {
-		Parent = Content,
-		Size = UDim2.fromScale(1, 1),
-		BackgroundTransparency = 1,
-		Visible = false,
-		ZIndex = 2
-	})
-
-	Pages[name] = page
-
-	return page
-end
-
-local QB = MakePage("QB")
-local Catching = MakePage("Catching")
-local Physics = MakePage("Physics")
-local Settings = MakePage("Settings")
-local Customs = MakePage("Customs")
-
-local function ShowPage(name)
-	for pageName, page in pairs(Pages) do
-		page.Visible = pageName == name
-	end
-end
-
---==================================================
--- TABS
---==================================================
-
-local TabNames = {
-	"QB",
-	"Catching",
-	"Physics",
-	"Settings",
-	"Customs"
-}
-
-local TabButtons = {}
-
-for i, name in ipairs(TabNames) do
-	local button = New("TextButton", {
-		Parent = Top,
-		Position = UDim2.fromOffset(235 + ((i - 1) * 130), 12),
-		Size = UDim2.fromOffset(120, 48),
-		BackgroundColor3 = DARK,
-		BorderSizePixel = 0,
-		Text = name,
-		TextColor3 = MUTED,
-		Font = Enum.Font.GothamSemibold,
-		TextSize = 12,
-		AutoButtonColor = false,
-		ZIndex = 7
-	})
-
-	Corner(button, 12)
-
-	TabButtons[name] = button
-
-	button.MouseButton1Click:Connect(function()
-		ShowPage(name)
-
-		for tabName, tab in pairs(TabButtons) do
-			tab.BackgroundColor3 = DARK
-			tab.TextColor3 = MUTED
-		end
-
-		button.BackgroundColor3 = Color3.fromRGB(50, 15, 95)
-		button.TextColor3 = TEXT
-	end)
-end
-
---==================================================
--- PAGE TITLE
---==================================================
-
-local function Title(page, title, desc)
-	New("TextLabel", {
-		Parent = page,
-		Position = UDim2.fromOffset(5, 0),
-		Size = UDim2.new(1, -10, 0, 30),
-		BackgroundTransparency = 1,
-		Text = title,
-		TextColor3 = TEXT,
-		Font = Enum.Font.GothamBold,
-		TextSize = 19,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		ZIndex = 3
-	})
-
-	New("TextLabel", {
-		Parent = page,
-		Position = UDim2.fromOffset(5, 32),
-		Size = UDim2.new(1, -10, 0, 20),
-		BackgroundTransparency = 1,
-		Text = desc,
-		TextColor3 = MUTED,
-		Font = Enum.Font.Gotham,
-		TextSize = 10,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		ZIndex = 3
-	})
-end
-
---==================================================
--- CARD
---==================================================
-
-local function MakeCard(page, x, y, w, h)
-	local card = New("Frame", {
-		Parent = page,
-		Position = UDim2.fromOffset(x, y),
-		Size = UDim2.fromOffset(w, h),
-		BackgroundColor3 = CARD,
-		BorderSizePixel = 0,
-		ZIndex = 3
-	})
-
-	Corner(card, 12)
-
-	New("UIStroke", {
-		Parent = card,
-		Color = Color3.fromRGB(65, 25, 105),
-		Transparency = .35
-	})
-
-	return card
-end
-
---==================================================
--- TOGGLE
---==================================================
-
-local function Toggle(parent, y, name, desc, key, callback)
-	New("TextLabel", {
-		Parent = parent,
-		Position = UDim2.fromOffset(18, y),
-		Size = UDim2.new(1, -100, 0, 20),
-		BackgroundTransparency = 1,
-		Text = name,
-		TextColor3 = TEXT,
-		Font = Enum.Font.GothamMedium,
-		TextSize = 12,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		ZIndex = 4
-	})
-
-	New("TextLabel", {
-		Parent = parent,
-		Position = UDim2.fromOffset(18, y + 20),
-		Size = UDim2.new(1, -100, 0, 18),
-		BackgroundTransparency = 1,
-		Text = desc,
-		TextColor3 = MUTED,
-		Font = Enum.Font.Gotham,
-		TextSize = 9,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		ZIndex = 4
-	})
-
-	local button = New("TextButton", {
-		Parent = parent,
-		Position = UDim2.new(1, -62, 0, y + 3),
-		Size = UDim2.fromOffset(45, 26),
-		BackgroundColor3 = C[key] and PURPLE or Color3.fromRGB(55, 50, 80),
-		Text = "",
-		AutoButtonColor = false,
-		ZIndex = 5
-	})
-
-	Corner(button, 20)
-
-	local dot = New("Frame", {
-		Parent = button,
-		Size = UDim2.fromOffset(20, 20),
-		Position = UDim2.new(
-			C[key] and 1 or 0,
-			C[key] and -23 or 3,
-			.5,
-			-10
+local function Tween(object, properties, duration)
+	TweenService:Create(
+		object,
+		TweenInfo.new(
+			duration or 0.15,
+			Enum.EasingStyle.Quad,
+			Enum.EasingDirection.Out
 		),
-		BackgroundColor3 = Color3.new(1, 1, 1),
-		BorderSizePixel = 0,
-		ZIndex = 6
-	})
-
-	Corner(dot, 20)
-
-	button.MouseButton1Click:Connect(function()
-		C[key] = not C[key]
-
-		button.BackgroundColor3 =
-			C[key] and PURPLE or Color3.fromRGB(55, 50, 80)
-
-		dot.Position = UDim2.new(
-			C[key] and 1 or 0,
-			C[key] and -23 or 3,
-			.5,
-			-10
-		)
-
-		if callback then
-			callback(C[key])
-		end
-	end)
+		properties
+	):Play()
 end
 
---==================================================
--- SLIDER
---==================================================
-
-local function Slider(parent, y, name, key, min, max, callback)
-	New("TextLabel", {
-		Parent = parent,
-		Position = UDim2.fromOffset(18, y),
-		Size = UDim2.fromOffset(160, 20),
-		BackgroundTransparency = 1,
-		Text = name,
-		TextColor3 = TEXT,
-		Font = Enum.Font.GothamMedium,
-		TextSize = 11,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		ZIndex = 4
-	})
-
-	local bar = New("Frame", {
-		Parent = parent,
-		Position = UDim2.new(0, 175, 0, y + 7),
-		Size = UDim2.new(1, -245, 0, 6),
-		BackgroundColor3 = Color3.fromRGB(40, 30, 65),
-		BorderSizePixel = 0,
-		ZIndex = 4
-	})
-
-	Corner(bar, 10)
-
-	local fill = New("Frame", {
-		Parent = bar,
-		Size = UDim2.new(
-			math.clamp((C[key] - min) / (max - min), 0, 1),
-			0,
-			1,
-			0
-		),
-		BackgroundColor3 = PURPLE,
-		BorderSizePixel = 0,
-		ZIndex = 5
-	})
-
-	Corner(fill, 10)
-
-	local value = New("TextLabel", {
-		Parent = parent,
-		Position = UDim2.new(1, -60, 0, y - 4),
-		Size = UDim2.fromOffset(48, 25),
-		BackgroundColor3 = DARK,
-		Text = tostring(C[key]),
-		TextColor3 = TEXT,
-		Font = Enum.Font.Gotham,
-		TextSize = 10,
-		ZIndex = 5
-	})
-
-	Corner(value, 6)
-
-	local dragging = false
-
-	local function Update(x)
-		local percent = math.clamp(
-			(x - bar.AbsolutePosition.X) / bar.AbsoluteSize.X,
-			0,
-			1
-		)
-
-		local number = min + ((max - min) * percent)
-
-		C[key] = math.floor(number * 100) / 100
-
-		fill.Size = UDim2.new(percent, 0, 1, 0)
-		value.Text = tostring(C[key])
-
-		if callback then
-			callback(C[key])
-		end
-	end
-
-	bar.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 then
-			dragging = true
-			Update(input.Position.X)
-		end
-	end)
-
-	UIS.InputChanged:Connect(function(input)
-		if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-			Update(input.Position.X)
-		end
-	end)
-
-	UIS.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 then
-			dragging = false
-		end
-	end)
+local function GetCharacter()
+	return LocalPlayer.Character
 end
-
---==================================================
--- CHARACTER / PHYSICS
---==================================================
 
 local function GetHumanoid()
-	local character = LP.Character
+	local character = GetCharacter()
 
 	if not character then
 		return nil
@@ -538,425 +170,1192 @@ local function GetHumanoid()
 	return character:FindFirstChildOfClass("Humanoid")
 end
 
-local function ApplySpeed()
-	local humanoid = GetHumanoid()
+--//==================================================
+--// PHYSICS
+--//==================================================
 
-	if humanoid then
-		humanoid.WalkSpeed = C.Speed
-	end
-end
-
-local function ApplyJump()
-	local humanoid = GetHumanoid()
-
-	if humanoid then
-		humanoid.UseJumpPower = true
-		humanoid.JumpPower = C.JumpBoost and C.JumpPower or 50
-	end
-end
-
-local function ApplyGravity()
-	workspace.Gravity = C.Gravity
-end
-
-local function ApplyFOV()
-	local camera = workspace.CurrentCamera
-
-	if camera then
-		camera.FieldOfView = C.FOV
-	end
-end
-
-LP.CharacterAdded:Connect(function()
-	task.wait(.5)
-
-	if C.Enabled then
-		ApplySpeed()
-		ApplyJump()
-	end
-end)
-
---==================================================
--- QB
---==================================================
-
-Title(
-	QB,
-	"⚡ QB",
-	"Quarterback controls and throwing settings."
-)
-
-local QBCard = MakeCard(QB, 0, 65, 615, 330)
-
-Toggle(
-	QBCard,
-	18,
-	"Aim Assist",
-	"Assist with QB aiming.",
-	"AimAssist"
-)
-
-Slider(
-	QBCard,
-	75,
-	"Aim Strength",
-	"AimStrength",
-	0,
-	1
-)
-
-Slider(
-	QBCard,
-	133,
-	"Accuracy",
-	"Accuracy",
-	0,
-	100
-)
-
-Slider(
-	QBCard,
-	191,
-	"Throw Power",
-	"ThrowPower",
-	0,
-	120
-)
-
-Toggle(
-	QBCard,
-	249,
-	"Auto Target",
-	"Automatically select a receiver.",
-	"AutoTarget"
-)
-
---==================================================
--- CATCHING
---==================================================
-
-Title(
-	Catching,
-	"⚡ Catching",
-	"Configure catching assistance and timing."
-)
-
-local CatchCard = MakeCard(Catching, 0, 65, 615, 330)
-
-Toggle(
-	CatchCard,
-	18,
-	"Auto Catch",
-	"Automatically catch when in range.",
-	"AutoCatch"
-)
-
-Slider(
-	CatchCard,
-	75,
-	"Catch Radius",
-	"CatchRadius",
-	5,
-	100
-)
-
-Slider(
-	CatchCard,
-	133,
-	"Catch Delay",
-	"CatchDelay",
-	0,
-	.5
-)
-
-Toggle(
-	CatchCard,
-	191,
-	"High Priority (QB)",
-	"Prioritize QB catches.",
-	"HighPriority"
-)
-
---==================================================
--- PHYSICS
---==================================================
-
-Title(
-	Physics,
-	"⚙ Physics",
-	"Movement and gameplay physics."
-)
-
-local PhysicsCard = MakeCard(Physics, 0, 65, 615, 370)
-
-Slider(
-	PhysicsCard,
-	18,
-	"Speed",
-	"Speed",
-	16,
-	100,
-	ApplySpeed
-)
-
-Toggle(
-	PhysicsCard,
-	76,
-	"Jump Boost",
-	"Increase your jump power.",
-	"JumpBoost",
-	ApplyJump
-)
-
-Slider(
-	PhysicsCard,
-	134,
-	"Jump Power",
-	"JumpPower",
-	50,
-	150,
-	ApplyJump
-)
-
-Slider(
-	PhysicsCard,
-	192,
-	"Gravity",
-	"Gravity strength.",
-	50,
-	250,
-	ApplyGravity
-)
-
-Slider(
-	PhysicsCard,
-	250,
-	"FOV",
-	"FOV",
-	50,
-	120,
-	ApplyFOV
-)
-
-local ResetPhysics = New("TextButton", {
-	Parent = PhysicsCard,
-	Position = UDim2.fromOffset(18, 310),
-	Size = UDim2.fromOffset(180, 38),
-	BackgroundColor3 = DARK,
-	BorderSizePixel = 0,
-	Text = "RESET PHYSICS",
-	TextColor3 = TEXT,
-	Font = Enum.Font.GothamBold,
-	TextSize = 11,
-	ZIndex = 5
-})
-
-Corner(ResetPhysics, 8)
-
-ResetPhysics.MouseButton1Click:Connect(function()
-	C.Speed = 16
-	C.JumpBoost = false
-	C.JumpPower = 50
-	C.Gravity = 196.2
-	C.FOV = 70
-
-	ApplySpeed()
-	ApplyJump()
-	ApplyGravity()
-	ApplyFOV()
-end)
-
---==================================================
--- SETTINGS
---==================================================
-
-Title(
-	Settings,
-	"⚙ Settings",
-	"General Thunder Hub settings."
-)
-
-local SettingsCard = MakeCard(Settings, 0, 65, 615, 330)
-
-Toggle(
-	SettingsCard,
-	18,
-	"System Enabled",
-	"Enable the system.",
-	"Enabled",
-	function(value)
-		if value then
-			ApplySpeed()
-			ApplyJump()
-		else
-			local humanoid = GetHumanoid()
-
-			if humanoid then
-				humanoid.WalkSpeed = 16
-				humanoid.JumpPower = 50
-			end
-		end
-	end
-)
-
-Toggle(
-	SettingsCard,
-	75,
-	"FPS Boost",
-	"Enable performance mode.",
-	"FPS"
-)
-
-Toggle(
-	SettingsCard,
-	132,
-	"Visuals",
-	"Enable visual effects.",
-	"Visuals"
-)
-
-local Kill = New("TextButton", {
-	Parent = SettingsCard,
-	Position = UDim2.fromOffset(18, 205),
-	Size = UDim2.fromOffset(180, 42),
-	BackgroundColor3 = Color3.fromRGB(80, 25, 45),
-	BorderSizePixel = 0,
-	Text = "KILL CLIENT",
-	TextColor3 = TEXT,
-	Font = Enum.Font.GothamBold,
-	TextSize = 11,
-	ZIndex = 5
-})
-
-Corner(Kill, 8)
-
-Kill.MouseButton1Click:Connect(function()
-	GUI:Destroy()
-end)
-
---==================================================
--- CUSTOMS
---==================================================
-
-Title(
-	Customs,
-	"☷ Customs",
-	"Presets and custom configuration."
-)
-
-local CustomCard = MakeCard(Customs, 0, 65, 615, 330)
-
-local Presets = {
-	Legit = {
-		AimStrength = .35,
-		Accuracy = 85,
-		ThrowPower = 85,
-		CatchRadius = 35,
-		CatchDelay = .15
-	},
-
-	Advanced = {
-		AimStrength = .70,
-		Accuracy = 95,
-		ThrowPower = 100,
-		CatchRadius = 60,
-		CatchDelay = .10
-	},
-
-	Blatant = {
-		AimStrength = 1,
-		Accuracy = 100,
-		ThrowPower = 120,
-		CatchRadius = 100,
-		CatchDelay = 0
-	}
-}
-
-local function ApplyPreset(name)
-	local preset = Presets[name]
-
-	if not preset then
+local function ApplyPhysics()
+	if not State.SystemEnabled then
 		return
 	end
 
-	for key, value in pairs(preset) do
-		C[key] = value
+	local humanoid = GetHumanoid()
+
+	if humanoid then
+		pcall(function()
+			humanoid.WalkSpeed = State.Speed
+			humanoid.JumpPower = State.JumpPower
+		end)
 	end
 
-	C.Preset = name
+	pcall(function()
+		workspace.Gravity = State.Gravity
+	end)
+
+	local camera = workspace.CurrentCamera
+
+	if camera then
+		pcall(function()
+			camera.FieldOfView = State.FOV
+		end)
+	end
 end
 
-for i, name in ipairs({"Legit", "Advanced", "Blatant"}) do
-	local button = New("TextButton", {
-		Parent = CustomCard,
-		Position = UDim2.fromOffset(18 + ((i - 1) * 195), 20),
-		Size = UDim2.fromOffset(175, 42),
-		BackgroundColor3 = name == C.Preset and PURPLE or DARK,
+--//==================================================
+--// SCREEN GUI
+--//==================================================
+
+local ScreenGui = Create("ScreenGui", {
+	Name = "ThunderHub",
+	ResetOnSpawn = false,
+	IgnoreGuiInset = true,
+	ZIndexBehavior = Enum.ZIndexBehavior.Global,
+	DisplayOrder = 999999,
+	Parent = UIParent
+})
+
+--//==================================================
+--// MAIN
+--//==================================================
+
+local Main = Create("Frame", {
+	Name = "Main",
+	Parent = ScreenGui,
+	BackgroundColor3 = Background,
+	BorderSizePixel = 0,
+	Size = UDim2.fromOffset(850, 560),
+	Position = UDim2.new(0.5, -425, 0.5, -280),
+	ClipsDescendants = true,
+	ZIndex = 10
+})
+
+Corner(Main, 12)
+Stroke(Main, Color3.fromRGB(67, 47, 90), 0.25, 1)
+
+local UIScale = Create("UIScale", {
+	Parent = Main,
+	Scale = 1
+})
+
+--//==================================================
+--// LIGHTNING
+--//==================================================
+
+local LightningContainer = Create("Frame", {
+	Parent = Main,
+	BackgroundTransparency = 1,
+	Size = UDim2.fromScale(1, 1),
+	ZIndex = 11
+})
+
+local function Lightning(position, rotation, size)
+	local bolt = Create("TextLabel", {
+		Parent = LightningContainer,
+		BackgroundTransparency = 1,
+		Text = "ϟ",
+		TextColor3 = Purple,
+		TextTransparency = 0.86,
+		Font = Enum.Font.GothamBlack,
+		TextSize = size,
+		Rotation = rotation,
+		Position = position,
+		Size = UDim2.fromOffset(120, 150),
+		ZIndex = 11
+	})
+
+	return bolt
+end
+
+Lightning(UDim2.new(0.70, 0, -0.05, 0), 12, 140)
+Lightning(UDim2.new(0.87, 0, 0.42, 0), -15, 110)
+Lightning(UDim2.new(0.04, 0, 0.62, 0), 12, 90)
+Lightning(UDim2.new(0.43, 0, 0.73, 0), -10, 75)
+
+--//==================================================
+--// TOP BAR
+--//==================================================
+
+local TopBar = Create("Frame", {
+	Parent = Main,
+	BackgroundColor3 = Panel,
+	BorderSizePixel = 0,
+	Size = UDim2.new(1, 0, 0, 68),
+	ZIndex = 20
+})
+
+local Logo = Create("TextLabel", {
+	Parent = TopBar,
+	BackgroundTransparency = 1,
+	Text = "⚡ THUNDER HUB",
+	TextColor3 = White,
+	Font = Enum.Font.GothamBold,
+	TextSize = 20,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	Position = UDim2.fromOffset(22, 9),
+	Size = UDim2.fromOffset(250, 26),
+	ZIndex = 21
+})
+
+local GameName = Create("TextLabel", {
+	Parent = TopBar,
+	BackgroundTransparency = 1,
+	Text = "FF3",
+	TextColor3 = PurpleLight,
+	Font = Enum.Font.GothamBold,
+	TextSize = 12,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	Position = UDim2.fromOffset(24, 36),
+	Size = UDim2.fromOffset(100, 20),
+	ZIndex = 21
+})
+
+local Status = Create("TextLabel", {
+	Parent = TopBar,
+	BackgroundTransparency = 1,
+	Text = "● SYSTEM ONLINE",
+	TextColor3 = Color3.fromRGB(130, 255, 180),
+	Font = Enum.Font.GothamMedium,
+	TextSize = 11,
+	TextXAlignment = Enum.TextXAlignment.Right,
+	AnchorPoint = Vector2.new(1, 0),
+	Position = UDim2.new(1, -20, 0, 24),
+	Size = UDim2.fromOffset(170, 20),
+	ZIndex = 21
+})
+
+--//==================================================
+--// SIDEBAR
+--//==================================================
+
+local Sidebar = Create("Frame", {
+	Parent = Main,
+	BackgroundColor3 = Panel,
+	BorderSizePixel = 0,
+	Position = UDim2.fromOffset(0, 68),
+	Size = UDim2.new(0, 175, 1, -68),
+	ZIndex = 20
+})
+
+local SidebarPadding = Create("UIPadding", {
+	Parent = Sidebar,
+	PaddingTop = UDim.new(0, 16),
+	PaddingLeft = UDim.new(0, 12),
+	PaddingRight = UDim.new(0, 12)
+})
+
+local SidebarLayout = Create("UIListLayout", {
+	Parent = Sidebar,
+	SortOrder = Enum.SortOrder.LayoutOrder,
+	Padding = UDim.new(0, 7)
+})
+
+local TabButtons = {}
+local Pages = {}
+
+local function CreateTab(name, icon, order)
+	local button = Create("TextButton", {
+		Parent = Sidebar,
+		BackgroundColor3 = Card,
 		BorderSizePixel = 0,
-		Text = name,
-		TextColor3 = TEXT,
+		Size = UDim2.new(1, 0, 0, 43),
+		Text = "",
+		AutoButtonColor = false,
+		LayoutOrder = order,
+		ZIndex = 21
+	})
+
+	Corner(button, 7)
+
+	local indicator = Create("Frame", {
+		Parent = button,
+		BackgroundColor3 = Purple,
+		BorderSizePixel = 0,
+		Position = UDim2.new(0, 0, 0.5, -10),
+		Size = UDim2.fromOffset(3, 20),
+		Visible = false,
+		ZIndex = 22
+	})
+
+	Corner(indicator, 2)
+
+	local text = Create("TextLabel", {
+		Parent = button,
+		BackgroundTransparency = 1,
+		Text = icon .. "  " .. name,
+		TextColor3 = Gray,
+		Font = Enum.Font.GothamMedium,
+		TextSize = 13,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Position = UDim2.fromOffset(18, 0),
+		Size = UDim2.new(1, -20, 1, 0),
+		ZIndex = 22
+	})
+
+	TabButtons[name] = {
+		Button = button,
+		Indicator = indicator,
+		Text = text
+	}
+
+	return button
+end
+
+CreateTab("QB", "◆", 1)
+CreateTab("Catching", "○", 2)
+CreateTab("Physics", "◇", 3)
+CreateTab("Settings", "⚙", 4)
+CreateTab("Customs", "✦", 5)
+
+--//==================================================
+--// CONTENT
+--//==================================================
+
+local Content = Create("Frame", {
+	Parent = Main,
+	BackgroundTransparency = 1,
+	Position = UDim2.fromOffset(175, 68),
+	Size = UDim2.new(1, -175, 1, -68),
+	ZIndex = 20
+})
+
+--//==================================================
+--// PAGE
+--//==================================================
+
+local function CreatePage(name, title, subtitle)
+	local page = Create("ScrollingFrame", {
+		Name = name .. "Page",
+		Parent = Content,
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Size = UDim2.fromScale(1, 1),
+		CanvasSize = UDim2.new(0, 0, 0, 0),
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		ScrollBarThickness = 3,
+		ScrollBarImageColor3 = Purple,
+		ScrollingDirection = Enum.ScrollingDirection.Y,
+		Visible = false,
+		ZIndex = 21
+	})
+
+	local padding = Create("UIPadding", {
+		Parent = page,
+		PaddingTop = UDim.new(0, 18),
+		PaddingLeft = UDim.new(0, 18),
+		PaddingRight = UDim.new(0, 18),
+		PaddingBottom = UDim.new(0, 25)
+	})
+
+	local layout = Create("UIListLayout", {
+		Parent = page,
+		FillDirection = Enum.FillDirection.Vertical,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, 12)
+	})
+
+	local header = Create("Frame", {
+		Parent = page,
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, 52),
+		LayoutOrder = 1
+	})
+
+	Create("TextLabel", {
+		Parent = header,
+		BackgroundTransparency = 1,
+		Text = title,
+		TextColor3 = White,
 		Font = Enum.Font.GothamBold,
-		TextSize = 12,
-		ZIndex = 5
+		TextSize = 21,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Position = UDim2.fromOffset(0, 0),
+		Size = UDim2.new(1, 0, 0, 27)
+	})
+
+	Create("TextLabel", {
+		Parent = header,
+		BackgroundTransparency = 1,
+		Text = subtitle,
+		TextColor3 = Gray,
+		Font = Enum.Font.Gotham,
+		TextSize = 11,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Position = UDim2.fromOffset(0, 29),
+		Size = UDim2.new(1, 0, 0, 18)
+	})
+
+	Pages[name] = page
+
+	return page
+end
+
+local function CreateSection(parent, title, description, order)
+	local section = Create("Frame", {
+		Parent = parent,
+		BackgroundColor3 = Card,
+		BorderSizePixel = 0,
+		Size = UDim2.new(1, 0, 0, 52),
+		LayoutOrder = order or 2,
+		ZIndex = 22
+	})
+
+	Corner(section, 8)
+	Stroke(section, Color3.fromRGB(55, 43, 70), 0.35, 1)
+
+	Create("TextLabel", {
+		Parent = section,
+		BackgroundTransparency = 1,
+		Text = title,
+		TextColor3 = White,
+		Font = Enum.Font.GothamBold,
+		TextSize = 13,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Position = UDim2.fromOffset(15, 7),
+		Size = UDim2.new(1, -30, 0, 18)
+	})
+
+	Create("TextLabel", {
+		Parent = section,
+		BackgroundTransparency = 1,
+		Text = description or "",
+		TextColor3 = Gray,
+		Font = Enum.Font.Gotham,
+		TextSize = 10,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Position = UDim2.fromOffset(15, 27),
+		Size = UDim2.new(1, -30, 0, 16)
+	})
+
+	return section
+end
+
+--//==================================================
+--// ROW
+--//==================================================
+
+local function CreateRow(parent, height, order)
+	local row = Create("Frame", {
+		Parent = parent,
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, height or 78),
+		LayoutOrder = order,
+		ZIndex = 22
+	})
+
+	local left = Create("Frame", {
+		Parent = row,
+		BackgroundTransparency = 1,
+		Size = UDim2.new(0.5, -6, 1, 0),
+		ZIndex = 23
+	})
+
+	local right = Create("Frame", {
+		Parent = row,
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0.5, 6, 0, 0),
+		Size = UDim2.new(0.5, -6, 1, 0),
+		ZIndex = 23
+	})
+
+	return left, right
+end
+
+--//==================================================
+--// TOGGLE
+--//==================================================
+
+local function CreateToggle(parent, title, description, key)
+	local button = Create("TextButton", {
+		Parent = parent,
+		BackgroundColor3 = Card,
+		BorderSizePixel = 0,
+		Size = UDim2.fromScale(1, 1),
+		Text = "",
+		AutoButtonColor = false,
+		ZIndex = 24
 	})
 
 	Corner(button, 8)
+	Stroke(button, Color3.fromRGB(55, 43, 70), 0.35, 1)
+
+	Create("TextLabel", {
+		Parent = button,
+		BackgroundTransparency = 1,
+		Text = title,
+		TextColor3 = White,
+		Font = Enum.Font.GothamMedium,
+		TextSize = 12,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Position = UDim2.fromOffset(14, 12),
+		Size = UDim2.new(1, -75, 0, 18),
+		ZIndex = 25
+	})
+
+	Create("TextLabel", {
+		Parent = button,
+		BackgroundTransparency = 1,
+		Text = description or "",
+		TextColor3 = Gray,
+		Font = Enum.Font.Gotham,
+		TextSize = 9,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Position = UDim2.fromOffset(14, 34),
+		Size = UDim2.new(1, -75, 0, 15),
+		ZIndex = 25
+	})
+
+	local toggle = Create("Frame", {
+		Parent = button,
+		BackgroundColor3 = Color3.fromRGB(55, 50, 65),
+		BorderSizePixel = 0,
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -13, 0.5, 0),
+		Size = UDim2.fromOffset(38, 20),
+		ZIndex = 25
+	})
+
+	Corner(toggle, 10)
+
+	local knob = Create("Frame", {
+		Parent = toggle,
+		BackgroundColor3 = Color3.fromRGB(175, 170, 185),
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(2, 2),
+		Size = UDim2.fromOffset(16, 16),
+		ZIndex = 26
+	})
+
+	Corner(knob, 10)
+
+	local function Update()
+		local enabled = State[key]
+
+		if enabled then
+			Tween(toggle, {
+				BackgroundColor3 = Purple
+			}, 0.12)
+
+			Tween(knob, {
+				BackgroundColor3 = White,
+				Position = UDim2.new(1, -18, 0, 2)
+			}, 0.12)
+		else
+			Tween(toggle, {
+				BackgroundColor3 = Color3.fromRGB(55, 50, 65)
+			}, 0.12)
+
+			Tween(knob, {
+				BackgroundColor3 = Color3.fromRGB(175, 170, 185),
+				Position = UDim2.fromOffset(2, 2)
+			}, 0.12)
+		end
+	end
+
+	button.MouseEnter:Connect(function()
+		Tween(button, {
+			BackgroundColor3 = CardHover
+		}, 0.1)
+	end)
+
+	button.MouseLeave:Connect(function()
+		Tween(button, {
+			BackgroundColor3 = Card
+		}, 0.1)
+	end)
 
 	button.MouseButton1Click:Connect(function()
-		ApplyPreset(name)
+		State[key] = not State[key]
 
-		for _, child in ipairs(CustomCard:GetChildren()) do
-			if child:IsA("TextButton") then
-				child.BackgroundColor3 = DARK
-			end
+		Update()
+
+		if key == "SystemEnabled" then
+			ApplyPhysics()
+		end
+	end)
+
+	Update()
+
+	return button
+end
+
+--//==================================================
+--// SLIDER
+--//==================================================
+
+local function CreateSlider(parent, title, description, key, minimum, maximum, suffix)
+	local card = Create("Frame", {
+		Parent = parent,
+		BackgroundColor3 = Card,
+		BorderSizePixel = 0,
+		Size = UDim2.fromScale(1, 1),
+		ZIndex = 24
+	})
+
+	Corner(card, 8)
+	Stroke(card, Color3.fromRGB(55, 43, 70), 0.35, 1)
+
+	Create("TextLabel", {
+		Parent = card,
+		BackgroundTransparency = 1,
+		Text = title,
+		TextColor3 = White,
+		Font = Enum.Font.GothamMedium,
+		TextSize = 12,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Position = UDim2.fromOffset(14, 9),
+		Size = UDim2.new(1, -80, 0, 18),
+		ZIndex = 25
+	})
+
+	local valueLabel = Create("TextLabel", {
+		Parent = card,
+		BackgroundTransparency = 1,
+		TextColor3 = PurpleLight,
+		Font = Enum.Font.GothamBold,
+		TextSize = 11,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		Position = UDim2.new(1, -65, 0, 9),
+		Size = UDim2.fromOffset(50, 18),
+		ZIndex = 25
+	})
+
+	Create("TextLabel", {
+		Parent = card,
+		BackgroundTransparency = 1,
+		Text = description or "",
+		TextColor3 = Gray,
+		Font = Enum.Font.Gotham,
+		TextSize = 9,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Position = UDim2.fromOffset(14, 28),
+		Size = UDim2.new(1, -28, 0, 14),
+		ZIndex = 25
+	})
+
+	local bar = Create("Frame", {
+		Parent = card,
+		BackgroundColor3 = Color3.fromRGB(50, 44, 60),
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(14, 52),
+		Size = UDim2.new(1, -28, 0, 6),
+		ZIndex = 25
+	})
+
+	Corner(bar, 5)
+
+	local fill = Create("Frame", {
+		Parent = bar,
+		BackgroundColor3 = Purple,
+		BorderSizePixel = 0,
+		Size = UDim2.new(0, 0, 1, 0),
+		ZIndex = 26
+	})
+
+	Corner(fill, 5)
+
+	local dragging = false
+
+	local function UpdateVisual()
+		local value = State[key]
+
+		local percent = math.clamp(
+			(value - minimum) / (maximum - minimum),
+			0,
+			1
+		)
+
+		fill.Size = UDim2.new(percent, 0, 1, 0)
+
+		valueLabel.Text =
+			tostring(math.floor(value)) ..
+			(suffix or "")
+	end
+
+	local function SetFromMouse(mouseX)
+		local width = bar.AbsoluteSize.X
+
+		if width <= 0 then
+			return
 		end
 
-		button.BackgroundColor3 = PURPLE
+		local percent = math.clamp(
+			(mouseX - bar.AbsolutePosition.X) / width,
+			0,
+			1
+		)
+
+		State[key] = math.floor(
+			minimum + ((maximum - minimum) * percent)
+		)
+
+		UpdateVisual()
+
+		if key == "Speed"
+			or key == "JumpPower"
+			or key == "Gravity"
+			or key == "FOV" then
+
+			ApplyPhysics()
+		end
+
+		if key == "UIScale" then
+			UIScale.Scale = math.clamp(
+				State.UIScale / 100,
+				0.75,
+				1.25
+			)
+		end
+	end
+
+	bar.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			dragging = true
+			SetFromMouse(input.Position.X)
+		end
+	end)
+
+	local changed = UserInputService.InputChanged:Connect(function(input)
+		if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+			SetFromMouse(input.Position.X)
+		end
+	end)
+
+	table.insert(Connections, changed)
+
+	local ended = UserInputService.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			dragging = false
+		end
+	end)
+
+	table.insert(Connections, ended)
+
+	UpdateVisual()
+
+	return card
+end
+
+--//==================================================
+--// ACTION
+--//==================================================
+
+local function CreateAction(parent, title, description, callback)
+	local button = Create("TextButton", {
+		Parent = parent,
+		BackgroundColor3 = Card,
+		BorderSizePixel = 0,
+		Size = UDim2.fromScale(1, 1),
+		Text = "",
+		AutoButtonColor = false,
+		ZIndex = 24
+	})
+
+	Corner(button, 8)
+	Stroke(button, Color3.fromRGB(55, 43, 70), 0.35, 1)
+
+	Create("TextLabel", {
+		Parent = button,
+		BackgroundTransparency = 1,
+		Text = title,
+		TextColor3 = White,
+		Font = Enum.Font.GothamMedium,
+		TextSize = 12,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Position = UDim2.fromOffset(14, 12),
+		Size = UDim2.new(1, -28, 0, 18),
+		ZIndex = 25
+	})
+
+	Create("TextLabel", {
+		Parent = button,
+		BackgroundTransparency = 1,
+		Text = description or "",
+		TextColor3 = Gray,
+		Font = Enum.Font.Gotham,
+		TextSize = 9,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Position = UDim2.fromOffset(14, 34),
+		Size = UDim2.new(1, -28, 0, 16),
+		ZIndex = 25
+	})
+
+	button.MouseEnter:Connect(function()
+		Tween(button, {
+			BackgroundColor3 = CardHover
+		}, 0.1)
+	end)
+
+	button.MouseLeave:Connect(function()
+		Tween(button, {
+			BackgroundColor3 = Card
+		}, 0.1)
+	end)
+
+	button.MouseButton1Click:Connect(callback)
+
+	return button
+end
+
+--//==================================================
+--// QB
+--//==================================================
+
+local QB = CreatePage(
+	"QB",
+	"Quarterback",
+	"Throwing and targeting controls"
+)
+
+CreateSection(
+	QB,
+	"QB Controls",
+	"Adjust your local quarterback configuration",
+	2
+)
+
+local a, b = CreateRow(QB, 78, 3)
+CreateToggle(a, "Aim Assist", "Local aim configuration", "AimAssist")
+CreateSlider(b, "Aim Strength", "Targeting strength", "AimStrength", 0, 100, "%")
+
+local c, d = CreateRow(QB, 78, 4)
+CreateSlider(c, "Accuracy", "Throw accuracy", "Accuracy", 0, 100, "%")
+CreateSlider(d, "Throw Power", "Throw power", "ThrowPower", 0, 100, "%")
+
+local e, f = CreateRow(QB, 78, 5)
+CreateToggle(e, "Auto Target", "Automatically select target", "AutoTarget")
+CreateSlider(f, "Target Distance", "Maximum target distance", "TargetDistance", 10, 300, "")
+
+--//==================================================
+--// CATCHING
+--//==================================================
+
+local Catching = CreatePage(
+	"Catching",
+	"Catching",
+	"Configure local catching preferences"
+)
+
+CreateSection(
+	Catching,
+	"Catch Controls",
+	"Fine tune your catching setup",
+	2
+)
+
+local ca, cb = CreateRow(Catching, 78, 3)
+CreateToggle(ca, "Auto Catch", "Local catch configuration", "AutoCatch")
+CreateSlider(cb, "Catch Radius", "Detection radius", "CatchRadius", 1, 50, "")
+
+local cc, cd = CreateRow(Catching, 78, 4)
+CreateSlider(cc, "Catch Delay", "Reaction delay", "CatchDelay", 0, 500, "ms")
+CreateSlider(cd, "Catch Window", "Catch timing window", "CatchWindow", 0, 100, "%")
+
+local ce, cf = CreateRow(Catching, 78, 5)
+CreateToggle(ce, "High Priority", "Prioritize catch input", "HighPriority")
+CreateToggle(cf, "Visual Catch", "Show catch visuals", "VisualCatch")
+
+--//==================================================
+--// PHYSICS
+--//==================================================
+
+local Physics = CreatePage(
+	"Physics",
+	"Physics",
+	"Local movement and camera settings"
+)
+
+CreateSection(
+	Physics,
+	"Movement",
+	"These settings apply directly to your local character",
+	2
+)
+
+local pa, pb = CreateRow(Physics, 78, 3)
+CreateSlider(pa, "Speed", "Humanoid WalkSpeed", "Speed", 1, 100, "")
+CreateToggle(pb, "Jump Boost", "Enable jump configuration", "JumpBoost")
+
+local pc, pd = CreateRow(Physics, 78, 4)
+CreateSlider(pc, "Jump Power", "Humanoid JumpPower", "JumpPower", 0, 150, "")
+CreateSlider(pd, "Gravity", "Workspace gravity", "Gravity", 0, 300, "")
+
+local pe, pf = CreateRow(Physics, 78, 5)
+CreateSlider(pe, "FOV", "Camera FieldOfView", "FOV", 40, 120, "")
+CreateSlider(pf, "Air Resistance", "Ball physics setting", "AirResistance", 0, 100, "%")
+
+local pg, ph = CreateRow(Physics, 78, 6)
+CreateSlider(pg, "Ball Velocity", "Ball velocity setting", "BallVelocity", 0, 200, "%")
+
+CreateAction(
+	ph,
+	"Apply Physics",
+	"Apply current local values",
+	function()
+		ApplyPhysics()
+	end
+)
+
+--//==================================================
+--// SETTINGS
+--//==================================================
+
+local Settings = CreatePage(
+	"Settings",
+	"Settings",
+	"Thunder Hub interface and system options"
+)
+
+CreateSection(
+	Settings,
+	"System",
+	"General menu configuration",
+	2
+)
+
+local sa, sb = CreateRow(Settings, 78, 3)
+
+CreateToggle(
+	sa,
+	"System Enabled",
+	"Enable Thunder Hub controls",
+	"SystemEnabled"
+)
+
+CreateToggle(
+	sb,
+	"FPS Boost",
+	"Reduce selected visual effects",
+	"FPSBoost"
+)
+
+local sc, sd = CreateRow(Settings, 78, 4)
+
+CreateToggle(
+	sc,
+	"Visuals",
+	"Show Thunder Hub visual effects",
+	"Visuals"
+)
+
+CreateSlider(
+	sd,
+	"UI Scale",
+	"Change menu size",
+	"UIScale",
+	75,
+	125,
+	"%"
+)
+
+local Controls = Create("Frame", {
+	Parent = Settings,
+	BackgroundColor3 = Card,
+	BorderSizePixel = 0,
+	Size = UDim2.new(1, 0, 0, 105),
+	LayoutOrder = 5,
+	ZIndex = 24
+})
+
+Corner(Controls, 8)
+Stroke(Controls, Color3.fromRGB(55, 43, 70), 0.35, 1)
+
+Create("TextLabel", {
+	Parent = Controls,
+	BackgroundTransparency = 1,
+	Text = "Controls",
+	TextColor3 = White,
+	Font = Enum.Font.GothamBold,
+	TextSize = 13,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	Position = UDim2.fromOffset(15, 10),
+	Size = UDim2.new(1, -30, 0, 20)
+})
+
+Create("TextLabel", {
+	Parent = Controls,
+	BackgroundTransparency = 1,
+	Text = "CTRL  —  Hide / Show Hub\nDrag top bar  —  Move Hub\nBottom-right corner  —  Resize Hub\nMouse wheel  —  Scroll pages",
+	TextColor3 = Gray,
+	Font = Enum.Font.Gotham,
+	TextSize = 10,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	TextYAlignment = Enum.TextYAlignment.Top,
+	Position = UDim2.fromOffset(15, 35),
+	Size = UDim2.new(1, -30, 0, 65)
+})
+
+local sx, sy = CreateRow(Settings, 65, 6)
+
+CreateAction(
+	sx,
+	"Reset Local Physics",
+	"Restore normal Roblox values",
+	function()
+		State.Speed = 16
+		State.JumpPower = 50
+		State.Gravity = 196.2
+		State.FOV = 70
+
+		ApplyPhysics()
+
+		Status.Text = "● PHYSICS RESET"
+		Status.TextColor3 = PurpleLight
+	end
+)
+
+CreateAction(
+	sy,
+	"Kill Client",
+	"Unload Thunder Hub completely",
+	function()
+		for _, connection in ipairs(Connections) do
+			pcall(function()
+				connection:Disconnect()
+			end)
+		end
+
+		ScreenGui:Destroy()
+	end
+)
+
+--//==================================================
+--// CUSTOMS
+--//==================================================
+
+local Customs = CreatePage(
+	"Customs",
+	"Customs",
+	"Presets and custom configuration"
+)
+
+CreateSection(
+	Customs,
+	"Presets",
+	"Choose a starting configuration",
+	2
+)
+
+local PresetRow = Create("Frame", {
+	Parent = Customs,
+	BackgroundTransparency = 1,
+	Size = UDim2.new(1, 0, 0, 75),
+	LayoutOrder = 3
+})
+
+local PresetLayout = Create("UIListLayout", {
+	Parent = PresetRow,
+	FillDirection = Enum.FillDirection.Horizontal,
+	Padding = UDim.new(0, 8)
+})
+
+local function CreatePreset(name, description, values)
+	local button = Create("TextButton", {
+		Parent = PresetRow,
+		BackgroundColor3 = Card,
+		BorderSizePixel = 0,
+		Size = UDim2.new(0.333, -6, 1, 0),
+		Text = "",
+		AutoButtonColor = false,
+		ZIndex = 24
+	})
+
+	Corner(button, 8)
+	Stroke(button, Color3.fromRGB(55, 43, 70), 0.35, 1)
+
+	Create("TextLabel", {
+		Parent = button,
+		BackgroundTransparency = 1,
+		Text = name,
+		TextColor3 = White,
+		Font = Enum.Font.GothamBold,
+		TextSize = 12,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Position = UDim2.fromOffset(12, 10),
+		Size = UDim2.new(1, -24, 0, 18)
+	})
+
+	Create("TextLabel", {
+		Parent = button,
+		BackgroundTransparency = 1,
+		Text = description,
+		TextColor3 = Gray,
+		Font = Enum.Font.Gotham,
+		TextSize = 9,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Position = UDim2.fromOffset(12, 34),
+		Size = UDim2.new(1, -24, 0, 25)
+	})
+
+	button.MouseEnter:Connect(function()
+		Tween(button, {
+			BackgroundColor3 = CardHover
+		}, 0.1)
+	end)
+
+	button.MouseLeave:Connect(function()
+		Tween(button, {
+			BackgroundColor3 = Card
+		}, 0.1)
+	end)
+
+	button.MouseButton1Click:Connect(function()
+		State.Preset = name
+
+		for key, value in pairs(values) do
+			State[key] = value
+		end
+
+		ApplyPhysics()
+
+		Status.Text = "● PRESET: " .. string.upper(name)
+		Status.TextColor3 = PurpleLight
 	end)
 end
 
-Toggle(
-	CustomCard,
-	90,
-	"Custom QB Model",
-	"Use a custom QB model.",
+CreatePreset(
+	"Legit",
+	"Balanced settings",
+	{
+		AimStrength = 55,
+		Accuracy = 90,
+		ThrowPower = 95,
+		CatchRadius = 8,
+		Speed = 16,
+		JumpPower = 50,
+		Gravity = 196.2,
+		FOV = 70
+	}
+)
+
+CreatePreset(
+	"Advanced",
+	"Stronger configuration",
+	{
+		AimStrength = 75,
+		Accuracy = 95,
+		ThrowPower = 100,
+		CatchRadius = 12,
+		Speed = 18,
+		JumpPower = 55,
+		Gravity = 180,
+		FOV = 75
+	}
+)
+
+CreatePreset(
+	"Blatant",
+	"Maximum local values",
+	{
+		AimStrength = 100,
+		Accuracy = 100,
+		ThrowPower = 100,
+		CatchRadius = 25,
+		Speed = 30,
+		JumpPower = 100,
+		Gravity = 120,
+		FOV = 90
+	}
+)
+
+CreateSection(
+	Customs,
+	"Custom Controls",
+	"Toggle individual custom systems",
+	4
+)
+
+local csa, csb = CreateRow(Customs, 78, 5)
+
+CreateToggle(
+	csa,
+	"Custom QB",
+	"Use custom quarterback values",
 	"CustomQB"
 )
 
-Toggle(
-	CustomCard,
-	147,
+CreateToggle(
+	csb,
 	"Custom Ball",
-	"Use a custom football model.",
+	"Use custom ball values",
 	"CustomBall"
 )
 
-Toggle(
-	CustomCard,
-	204,
+local csc, csd = CreateRow(Customs, 78, 6)
+
+CreateToggle(
+	csc,
 	"Custom Animations",
-	"Use custom animations.",
+	"Use custom animation settings",
 	"CustomAnimations"
 )
 
---==================================================
--- DEFAULT TAB
---==================================================
+CreateAction(
+	csd,
+	"Reset Customs",
+	"Restore custom configuration",
+	function()
+		State.CustomQB = false
+		State.CustomBall = false
+		State.CustomAnimations = false
+		State.Preset = "Legit"
 
+		Status.Text = "● CUSTOMS RESET"
+		Status.TextColor3 = PurpleLight
+	end
+)
+
+--//==================================================
+--// PAGE SWITCHING
+--//==================================================
+
+local function ShowPage(name)
+	for pageName, page in pairs(Pages) do
+		page.Visible = pageName == name
+
+		if pageName == name then
+			page.CanvasPosition = Vector2.new(0, 0)
+		end
+	end
+
+	for tabName, data in pairs(TabButtons) do
+		local active = tabName == name
+
+		data.Indicator.Visible = active
+		data.Text.TextColor3 = active and White or Gray
+
+		Tween(
+			data.Button,
+			{
+				BackgroundColor3 =
+					active
+					and Color3.fromRGB(35, 27, 48)
+					or Card
+			},
+			0.12
+		)
+	end
+end
+
+for name, data in pairs(TabButtons) do
+	local connection = data.Button.MouseButton1Click:Connect(function()
+		ShowPage(name)
+	end)
+
+	table.insert(Connections, connection)
+end
+
+-- Start on QB
 ShowPage("QB")
 
-TabButtons.QB.BackgroundColor3 = Color3.fromRGB(50, 15, 95)
-TabButtons.QB.TextColor3 = TEXT
-
---==================================================
--- DRAGGING
---==================================================
+--//==================================================
+--// DRAGGING
+--//==================================================
 
 local dragging = false
 local dragStart
 local startPosition
 
-Top.InputBegan:Connect(function(input)
+TopBar.InputBegan:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
 		dragging = true
 		dragStart = input.Position
@@ -964,7 +1363,7 @@ Top.InputBegan:Connect(function(input)
 	end
 end)
 
-UIS.InputChanged:Connect(function(input)
+local dragChanged = UserInputService.InputChanged:Connect(function(input)
 	if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
 		local delta = input.Position - dragStart
 
@@ -977,89 +1376,177 @@ UIS.InputChanged:Connect(function(input)
 	end
 end)
 
-UIS.InputEnded:Connect(function(input)
+table.insert(Connections, dragChanged)
+
+local dragEnded = UserInputService.InputEnded:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
 		dragging = false
 	end
 end)
 
---==================================================
--- RESIZE HANDLE
---==================================================
+table.insert(Connections, dragEnded)
 
-local Resize = New("TextButton", {
+--//==================================================
+--// RESIZE
+--//==================================================
+
+local Resize = Create("TextButton", {
 	Parent = Main,
+	BackgroundColor3 = Purple,
+	BackgroundTransparency = 0.1,
+	BorderSizePixel = 0,
 	AnchorPoint = Vector2.new(1, 1),
-	Position = UDim2.fromScale(1, 1),
-	Size = UDim2.fromOffset(24, 24),
-	BackgroundTransparency = 1,
-	Text = "◢",
-	TextColor3 = PURPLE,
+	Position = UDim2.new(1, 0, 1, 0),
+	Size = UDim2.fromOffset(20, 20),
+	Text = "↘",
+	TextColor3 = White,
 	Font = Enum.Font.GothamBold,
-	TextSize = 14,
+	TextSize = 12,
 	AutoButtonColor = false,
-	ZIndex = 20
+	ZIndex = 50
 })
+
+Corner(Resize, 5)
 
 local resizing = false
 local resizeStart
-local sizeStart
+local originalSize
 
-Resize.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 then
-		resizing = true
-		resizeStart = input.Position
-		sizeStart = Main.AbsoluteSize
-	end
+Resize.MouseButton1Down:Connect(function()
+	resizing = true
+	resizeStart = UserInputService:GetMouseLocation()
+	originalSize = Main.Size
 end)
 
-UIS.InputChanged:Connect(function(input)
+local resizeChanged = UserInputService.InputChanged:Connect(function(input)
 	if resizing and input.UserInputType == Enum.UserInputType.MouseMovement then
-		local delta = input.Position - resizeStart
+		local mouse = UserInputService:GetMouseLocation()
+
+		local deltaX = mouse.X - resizeStart.X
+		local deltaY = mouse.Y - resizeStart.Y
 
 		local width = math.clamp(
-			sizeStart.X + delta.X,
+			originalSize.X.Offset + deltaX,
 			650,
-			1250
+			1100
 		)
 
 		local height = math.clamp(
-			sizeStart.Y + delta.Y,
-			400,
-			800
+			originalSize.Y.Offset + deltaY,
+			450,
+			750
 		)
 
 		Main.Size = UDim2.fromOffset(width, height)
 	end
 end)
 
-UIS.InputEnded:Connect(function(input)
+table.insert(Connections, resizeChanged)
+
+local resizeEnded = UserInputService.InputEnded:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
 		resizing = false
 	end
 end)
 
---==================================================
--- CTRL HIDE / SHOW
---==================================================
+table.insert(Connections, resizeEnded)
 
-UIS.InputBegan:Connect(function(input, processed)
+--//==================================================
+--// CTRL TOGGLE
+--//==================================================
+
+local hidden = false
+
+local ctrlConnection = UserInputService.InputBegan:Connect(function(input, processed)
 	if processed then
 		return
 	end
 
-	if input.KeyCode == Enum.KeyCode.LeftControl then
-		GUI.Enabled = not GUI.Enabled
+	if input.KeyCode == Enum.KeyCode.LeftControl
+		or input.KeyCode == Enum.KeyCode.RightControl then
+
+		hidden = not hidden
+		Main.Visible = not hidden
 	end
 end)
 
---==================================================
--- INITIAL VALUES
---==================================================
+table.insert(Connections, ctrlConnection)
 
-task.defer(function()
-	ApplySpeed()
-	ApplyJump()
-	ApplyGravity()
-	ApplyFOV()
+--//==================================================
+--// FPS BOOST
+--//==================================================
+
+local function ApplyFPSBoost()
+	if not State.FPSBoost then
+		return
+	end
+
+	for _, object in ipairs(workspace:GetDescendants()) do
+		pcall(function()
+			if object:IsA("ParticleEmitter")
+				or object:IsA("Trail")
+				or object:IsA("Beam") then
+
+				object.Enabled = false
+			end
+		end)
+	end
+end
+
+--//==================================================
+--// CHARACTER RESPAWN
+--//==================================================
+
+local characterConnection = LocalPlayer.CharacterAdded:Connect(function()
+	task.wait(0.5)
+
+	ApplyPhysics()
+	ApplyFPSBoost()
 end)
+
+table.insert(Connections, characterConnection)
+
+--//==================================================
+--// LIGHTNING ANIMATION
+--//==================================================
+
+task.spawn(function()
+	while ScreenGui.Parent do
+		task.wait(2)
+
+		for _, object in ipairs(LightningContainer:GetChildren()) do
+			if object:IsA("TextLabel") then
+				if State.Visuals then
+					Tween(
+						object,
+						{
+							TextTransparency = math.random(80, 93) / 100
+						},
+						0.35
+					)
+				else
+					Tween(
+						object,
+						{
+							TextTransparency = 1
+						},
+						0.2
+					)
+				end
+			end
+		end
+	end
+end)
+
+--//==================================================
+--// INITIALIZE
+--//==================================================
+
+pcall(function()
+	UIScale.Scale = State.UIScale / 100
+end)
+
+ApplyPhysics()
+ApplyFPSBoost()
+
+print("[Thunder Hub] Loaded successfully.")
